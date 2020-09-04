@@ -1,0 +1,2371 @@
+#LyX 2.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 544
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\begin_preamble
+\usepackage{hyperref}
+\end_preamble
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_minted 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Title
+LLVM GSoC '20 Hot/Cold Splitting
+\end_layout
+
+\begin_layout Author
+Ruijie Fang 
+\family typewriter
+<ruijief@princeton.edu>
+\end_layout
+
+\begin_layout Standard
+Note: This page is compiled by LyX into XHTML format; it works best in Firefox,
+ as the footnotes are properly displayed.
+ When you encounter images, click to enlarge them.
+\end_layout
+
+\begin_layout Standard
+Permanent URL to this document: 
+\begin_inset CommandInset href
+LatexCommand href
+target "https://tr5.org/~ruijie/gsoc20_hcs/index.xhtml"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Mentors
+\end_layout
+
+\begin_layout Standard
+Aditya Kumar, Rodrigo Rocha
+\end_layout
+
+\begin_layout Paragraph*
+Synopsis
+\end_layout
+
+\begin_layout Standard
+The objective of this project is to find ways to improve the outlining ability
+ of the hot/cold splitting optimization pass in the LLVM compiler on two
+ real-world workloads: qemu (both userspace and full-system emulation) and
+ Firefox.
+ In terms of deliverable code, my contribution to this project is a series
+ of small patches to the Hot/Cold Splitting pass that added section splitting,
+ longjmp outlining, EH outlining capabilities and a bugfix in LLVM's basic
+ block extractor (CodeExtractor).
+ In addition to contributing code, I also collected benchmark data on Firefox
+ and qemu codebases to test different ideas to improve hot/cold splitting's
+ outlining ability, and wrote scripts to automate the testing/benchmarking
+ workflow.
+ During the three-month process, I met with Aditya and Rodrigo weekly and
+ had routine conversations via Discord for discussion.
+ This report is a comprehensive summary of my work performed this summer
+ during GSoC'20 and relevant ideas discussed between me and my mentors.
+\end_layout
+
+\begin_layout Section*
+Contributions
+\end_layout
+
+\begin_layout Standard
+We found that when applying PGO+HCS to compile Firefox results in a 5% speedup
+ in Firefox performance benchmarks (talos-test perf-reftests):
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="3" columns="3">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (mean)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (median)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 Baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1015.8s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1015.0s
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 PGO+Vanilla HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+961.3s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+961.0s
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Downloads/68747470733a2f2f692e696d6775722e636f6d2f6e32423558686d2e706e67.png
+	scale 30
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We also found that Hot/Cold Splitting can reduce the code size of Firefox
+ by 2%:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="3" columns="3">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Opt Level
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Size (incl.
+ dynamic libraries)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Vanilla HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.247788640 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.299546240 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Code Contributions.
+\end_layout
+
+\begin_layout Standard
+My code contribution comes in the form of a series of patches on LLVM's
+ Phabricator:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "D69257"
+target "https://reviews.llvm.org/D69257"
+literal "false"
+
+\end_inset
+
+ (Outlining noreturn functions unless a longjmp): Add capability to outline
+ noreturning functions except longjmp intrinsics.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "D85331"
+target "https://reviews.llvm.org/D85331"
+literal "false"
+
+\end_inset
+
+ (Add options for splitting cold functions into separate section): Add section-s
+plitting capability: Put cold functions into a separate section into compiled
+ binary.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "D85628"
+target "https://reviews.llvm.org/D85628"
+literal "false"
+
+\end_inset
+
+ (Add command line option for supplying cold function names via user-input):
+ Add command line option to take in a list of cold function names.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "D84468"
+target "https://reviews.llvm.org/D84468"
+literal "false"
+
+\end_inset
+
+ (Add splitting delta option to split more small blocks) Add option to add
+ a user-defined 
+\begin_inset Quotes eld
+\end_inset
+
+delta
+\begin_inset Quotes erd
+\end_inset
+
+ value to boost the cost model's benefit score.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "D86832"
+target "https://reviews.llvm.org/D86832"
+literal "false"
+
+\end_inset
+
+ (Add support for outlining Itanium EH blocks by hoisting calls to eh.typeid.for
+ intrinsic) Support outlining Itanium-style exception handling regions.
+\end_layout
+
+\begin_layout Paragraph
+Additional Contributions.
+\end_layout
+
+\begin_layout Standard
+Additional contributions come in the form of scripts that automate the process
+ of benchmarking different hot/cold splitting implementations and collecting
+ the resultant benchmark data.
+ The scripts are listed below:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/hcs-dot-printer"
+target "https://github.com/ruijiefang/llvm-hcs/tree/hcs-dot-printer"
+literal "false"
+
+\end_inset
+
+: A version of hotcoldsplit that prints out dot files of the modified CFG
+ with detected cold blocks outlined in red and split cold blocks outlined
+ in yellow, for visualizing hot/cold splitting in action.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/early-stage-hcs"
+target "https://github.com/ruijiefang/llvm-hcs/tree/early-stage-hcs"
+literal "false"
+
+\end_inset
+
+: A version of hotcoldsplit that is scheduled just before ModuleInliner
+ in the optimization pipeline (needs to enable the new PassManager in clang
+ to work).
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "Scripts used for running HCS compilation benchmarks on qemu and firefox."
+target "https://github.com/ruijiefang/llvm-hcs/tree/arcpatch-D57265/gsoc-ruijief"
+literal "false"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/sese"
+target "https://github.com/ruijiefang/llvm-hcs/tree/sese"
+literal "false"
+
+\end_inset
+
+: (Work in progress; detailed in the future works section).
+ Adding maximal single-entry-single-exit (SESE) region outlining capability
+ to hot/cold splitting.
+\end_layout
+
+\begin_layout Section*
+Project Timeline
+\end_layout
+
+\begin_layout Paragraph
+Initial Plan: Benchmarking qemu.
+\end_layout
+
+\begin_layout Standard
+We started our work by collecting benchmark information on qemu userspace
+ and qemu wholesystem benchmarks
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+The qemu version used is qemu trunk @ commit 
+\begin_inset Formula $\texttt{06c4cc3660b366278bdc7bc8b6677032d7b1118c}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+.
+ Userspace qemu (whose binary size is smaller) can be used to run individual
+ binaries, whereas wholeystem qemu (whose binary size is larger) is used
+ to simulate an entire virtual machine, for running payloads such as operating
+ system images.
+ Instrumenting userspace qemu proved to be relatively problematic, due to
+ qemu's nature as a machine code translator: LLVM instrumentation works
+ by injecting extra code, (via the compiler-rt infrastructure) which writes
+ instrumentation data to disk, into the program's exit handler.
+ However, upon receiving an exit signal, the qemu userspace emulator will
+ immediately translate and feed the appropriate exception instruction into
+ the host CPU, thereby executing the emulated program's exit handlers rather
+ than qemu's own exit handlers.
+ Therefore, to appropriately collect instrumentation data, we had to modify
+ the qemu source code to call qemu's own exit handlers
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+A fork of qemu modified for PGO instrumentation can be found here:
+\begin_inset CommandInset href
+LatexCommand href
+name " https://github.com/ruijiefang/qemu-x86_64-linux-benchmark"
+target " https://github.com/ruijiefang/qemu-x86_64-linux-benchmark"
+literal "false"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+For userspace qemu benchmark, we utilized userspace qemu and the system's
+ default clang/clang++ to compile postgresql, and measured the overall compile
+ time.
+ For wholesystem qemu, we measured the time spent booting up Ubuntu 16.04
+ and running several of byte-unixbench benchmarks using x86_64 wholesystem
+ qemu.
+\end_layout
+
+\begin_layout Paragraph
+Insignificant results on qemu made us switch to benchmarking firefox.
+\end_layout
+
+\begin_layout Standard
+However, as seen in the results section, the benefits of hot/cold splitting
+ on qemu was not obvious, and most of the experiments yielded no gains beyond
+ noise.
+ We think the reason is as follows:
+\end_layout
+
+\begin_layout Standard
+1.
+ The size of qemu binaries are small (~15MB for userspace and ~50MB for
+ x86_64 wholesystem binaries)
+\end_layout
+
+\begin_layout Standard
+2.
+ The computer on which we ran the benchmarks has an Intel Xeon E5-1607 CPU,
+ 32GB ECC RAM, and 10MiB L3 cache.
+ The large cache sizes and the powerfulness of the CPU rendered the gains
+ produced by an icache optimization like Hot/Cold Splitting insignificant.
+\end_layout
+
+\begin_layout Standard
+3.
+ qemu is written in C; whereas, hot/cold splitting should be more effective
+ for C++, where the code base is more complex and leaves room for outlining
+ optimizations.
+\end_layout
+
+\begin_layout Standard
+As such, we decided to switch to benchmarking firefox (via PGO-compiling
+ Firefox's repository mozilla-central); the Firefox production binary size
+ (with dynamic libraries included) is ~2-3GBytes, depending on the compiler
+ flag and optimizations used, together with the amount of C++ code contained
+ in Firefox makes it a nice candidate for our benchmarks.
+ Our methodology for benchmarking firefox is to compile Firefox using PGO+Hot/Co
+ld Splitting, then run a performance benchmark using the 
+\begin_inset Quotes eld
+\end_inset
+
+talos-test perf-reftest
+\begin_inset Quotes erd
+\end_inset
+
+ testsuite, which is the same set of tests we use to obtain instrumentation
+ data.
+\end_layout
+
+\begin_layout Itemize
+Deliverables: HCS pass that prints CFGs with detected cold blocks and extracted
+ blocks annotated available at: 
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/hcs-dot-printer"
+target "https://github.com/ruijiefang/llvm-hcs/tree/hcs-dot-printer"
+literal "false"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Scripts available at: 
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/arcpatch-D57265/gsoc-ruijief"
+target "https://github.com/ruijiefang/llvm-hcs/tree/arcpatch-D57265/gsoc-ruijief"
+literal "false"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Improvement Idea 1: Hot/Cold Splitting + Inliner.
+\end_layout
+
+\begin_layout Standard
+The first improvement idea for applying Hot/Cold splitting to Firefox was
+ suggested by Rodrigo.
+ We devised an HCS implementation that runs early in the new PassManager's
+ PGO optimization pipeline, immediately before the stock ModuleInliner pass:
+ https://github.com/ruijiefang/llvm-hcs/tree/arcpatch-D57265.
+ Thus, we outline code every time before we inline.
+ As seen in the results section, this approach greatly increased the number
+ of cold blocks detected and split, at the expense of blowing up the code
+ size by more than 5%.
+ However, no significant performance benefits were observed.
+ Since this approach causes an increase in code size at the expense of outlining
+ more blocks, and the modifications to the source code was rather involved,
+ we did not propose it as a patch to Phabricator.
+ Instead, it lives as a branch on our own LLVM fork: https://github.com/ruijiefan
+g/llvm-hcs/tree/arcpatch-D57265.
+\end_layout
+
+\begin_layout Itemize
+Deliverables: Implementation at 
+\begin_inset CommandInset href
+LatexCommand href
+name "https://github.com/ruijiefang/llvm-hcs/tree/early-stage-hcs"
+target "https://github.com/ruijiefang/llvm-hcs/tree/early-stage-hcs"
+literal "false"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Paragraph
+Improvement Idea 2: Adding a Delta Option.
+\end_layout
+
+\begin_layout Standard
+The second improvement idea stems from our analysis of the behavior of the
+ cost model when compiling qemu with hot/cold splitting.
+ By making a histogram of the hot/cold split cost model on qemu blocks,
+ we found there are a large number of blocks with negative benefit-penalty
+ differences, but the difference themselves are relatively small:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Downloads/delta.png
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Downloads/delta2.png
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Therefore, we experimented with whether splitting these blocks with negative
+ benefit-penalty differences in range 
+\begin_inset Formula $[\epsilon,0]$
+\end_inset
+
+ where 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ is a small value between -1 and -5.
+ The result, as outlined in the benchmark data section, is while there is
+ a slight gain in performance data in qemu benchmarks, there is a code size
+ increase.
+ Vedant Kumar later pointed us towards an earlier patch he implemented,
+ D59715, which adds more granular input size checking to the cost model
+ for computing penalties.
+ The proposed changes in D59715 is confirmed to both perform well (with
+ negligible effect on performance and a reduction in code size) on Firefox
+ benchmarks.
+ Our modification is proposed as a patch (
+\begin_inset CommandInset href
+LatexCommand href
+name "https://reviews.llvm.org/D84468"
+target "https://reviews.llvm.org/D84468"
+literal "false"
+
+\end_inset
+
+).
+\end_layout
+
+\begin_layout Paragraph
+Improvement Idea 3: Put cold functions in a different section.
+\end_layout
+
+\begin_layout Standard
+Another improvement idea we tried is to place cold functions into a different
+ section in order to further increase instruction cache affinity for hot
+ functions.
+ This is implemented in patch D69257 (
+\begin_inset CommandInset href
+LatexCommand href
+name "https://reviews.llvm.org/D69257"
+target "https://reviews.llvm.org/D69257"
+literal "false"
+
+\end_inset
+
+), and thereafter merged into LLVM trunk.
+ Together with LLVM's newly added LLVM machine function splitter optimization
+ pass, the modification is shown to be benefitial in terms of reducing the
+ number of pagefaults
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+See relevant discussions and experiment results in 
+\begin_inset CommandInset href
+LatexCommand href
+name "https://reviews.llvm.org/D85368"
+target "https://reviews.llvm.org/D85368"
+literal "false"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Paragraph
+Improvement Idea 4: Improved static analysis with longjmp and EH outlining.
+\end_layout
+
+\begin_layout Standard
+As a first improvement, we merged Aditya's patch D69257 (
+\begin_inset Flex URL
+status collapsed
+
+\begin_layout Plain Layout
+
+https://reviews.llvm.org/D69257
+\end_layout
+
+\end_inset
+
+), which adds capability for outlining noreturn functions unless a longjmp.
+ Next, we proceeded to work on outlining Itanium-style exception handling
+ blocks.
+ Itanium-style EH handling in LLVM follows roughly the following structure:
+\end_layout
+
+\begin_layout LyX-Code
+invoke-*** 
+\end_layout
+
+\begin_layout LyX-Code
+| 
+\end_layout
+
+\begin_layout LyX-Code
+lpad-*** 
+\end_layout
+
+\begin_layout LyX-Code
+| 
+\end_layout
+
+\begin_layout LyX-Code
+catch.dispatch 
+\end_layout
+
+\begin_layout LyX-Code
+|         |
+\end_layout
+
+\begin_layout LyX-Code
+catch     |
+\end_layout
+
+\begin_layout LyX-Code
+|         |
+\end_layout
+
+\begin_layout LyX-Code
+catch.fallthrough
+\end_layout
+
+\begin_layout LyX-Code
+|
+\end_layout
+
+\begin_layout LyX-Code
+resume
+\end_layout
+
+\begin_layout Standard
+\begin_inset Separator plain
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+With our implementation of EH outlining, we are able to outline most non-nested
+ try/catch regions in C++ code.
+ The idea is to hoist the problematic calls to eh.typeid.for to some earlier
+ entry block before the region dominated by the landing pad block, and split
+ the block containing the landingpad instruction into a block containing
+ only the landingpad instruction and possibly some phi-nodes, and a block
+ containing the rest of the EH entry block, terminated by an unconditional
+ branch to catch.dispatch.
+ This implementation supports some partial outlining of nested EH regions
+ as well.
+\end_layout
+
+\begin_layout Standard
+An example of try/catch outlining is as follows.
+ We will focus on the following C++ code:
+\end_layout
+
+\begin_layout LyX-Code
+int main()
+\end_layout
+
+\begin_layout LyX-Code
+{
+\end_layout
+
+\begin_layout LyX-Code
+  int i = 3;
+\end_layout
+
+\begin_layout LyX-Code
+  try {
+\end_layout
+
+\begin_layout LyX-Code
+    if (i == 3) throw i;
+\end_layout
+
+\begin_layout LyX-Code
+  } catch (int e) {
+\end_layout
+
+\begin_layout LyX-Code
+    exit(i);
+\end_layout
+
+\begin_layout LyX-Code
+  } catch (char c) {
+\end_layout
+
+\begin_layout LyX-Code
+    exit(2);
+\end_layout
+
+\begin_layout LyX-Code
+  } catch (long d) {
+\end_layout
+
+\begin_layout LyX-Code
+    exit(4);
+\end_layout
+
+\begin_layout LyX-Code
+  } catch (string s) {
+\end_layout
+
+\begin_layout LyX-Code
+    exit(5);
+\end_layout
+
+\begin_layout LyX-Code
+  }
+\end_layout
+
+\begin_layout LyX-Code
+  return 0;
+\end_layout
+
+\begin_layout LyX-Code
+}
+\end_layout
+
+\begin_layout Standard
+The above code produces the following (unoptimized) IR CFG:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/try_nosplit.png
+	scale 20
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Our EH outliner implementation hoists the call to eh.typeid.for contained
+ in the 
+\begin_inset Formula $\texttt{catch.dispatch}$
+\end_inset
+
+ and 
+\begin_inset Formula $\texttt{catch.fallthrough}$
+\end_inset
+
+blocks into
+\begin_inset Formula $\texttt{lpad}$
+\end_inset
+
+ block, splits the landingpad block in half, and feeds the transformed region
+ starting from the direct successor of the new lpad block into the OutliningRegi
+on outliner.
+ The result is as follows, with two regions extracted:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/eh_pngs/main.png
+	scale 30
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/eh_pngs/main.cold.4.png
+	scale 30
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/eh_pngs/main.cold.1.png
+	scale 30
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/eh_pngs/main.cold.2.png
+	scale 30
+
+\end_inset
+
+
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/eh_pngs/main.cold.3.png
+	scale 30
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The difficulties of outlining are as follows:
+\end_layout
+
+\begin_layout Enumerate
+We cannot extract the block containing the invoke, otherwise we'll potentially
+ extract the hot branch as well; 
+\end_layout
+
+\begin_layout Enumerate
+We cannot extract the entire landing pad block, since the first instruction
+ after the unwind edge into the lpad block must be the landingpad instruction.
+ 
+\end_layout
+
+\begin_layout Enumerate
+It seems possible to simply split the lpad block into two from the first
+ instruction, and then outling starting from there; this is analogous to
+ issue #4, which we outline below; 
+\end_layout
+
+\begin_layout Enumerate
+The block at catch.dispatch contains potentially a series of calls to the
+ eh.typeid.for intrinsic to use function-specific type information to match
+ if the catch call can go through.
+ As such, CodeExtractor cannot extract these calls (See detailed discussion
+ and example in https://bugs.llvm.org/show_bug.cgi?id=39545).
+ Making typeid.for outlining-friendly seems in general a difficult task,
+ as the proposed patch in 39545 uses an entirely new pass to do so.
+ 
+\end_layout
+
+\begin_layout Enumerate
+What remains is the idea of extracting the typeid.for intrinsic calls to
+ further up in the control flow graph, and since we have rather normal control
+ flow, we can do so safely and store the resultant values in some variable.
+ However, consider the following example of nested throws:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/main.png
+	scale 20
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Since there are multiple catch.dispatch blocks, we cannot simply extract
+ calls to eh.typeid.for from them to an arbitrary block that precedes them.
+ On hindsight, it seems like we can just extract the call instructions to
+ the successor block (between itself and landingpad block) to catch.dispatch.
+ However, doing so is potentially unsafe, since the fallthrough branch of
+ a try block in an outer nesting directly goes into the catch.dispatch block
+ in the inner nesting, which means we cannot use the eh.typeid.for values
+ unless we insert a phi node.
+ Expanding on our previous example, the following hoisted CFG needs a phi-node
+ inserted in catch.dispatch3:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename /home/rjf/Projects/gsoc/examples/main3.png
+	scale 20
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+A possible solution is to extract these call instructions to the highest
+ post-landingpad block that dominates them.
+ This is the "safe" strategy we currently implement: https://github.com/ruijiefan
+g/llvm-hcs/tree/eh-prepare.
+ However, there are still complex cases of nested throws we cannot fully
+ outline, mainly because the current implementation of OutliningRegion does
+ not guarantee to extract maximal SESE regions.
+ A good example is the CFG example provided above.
+\end_layout
+
+\begin_layout Standard
+Empirical data collected on compilation of Firefox suggests the EH outlining
+ implementation is beneficial; in -Os compilation experiments, enabling
+ EH outling leads to both reduced code size as well as an increased number
+ of detected cold blocks.
+ For detailed data, see the results section.
+\end_layout
+
+\begin_layout Itemize
+Deliverables: Patch at 
+\begin_inset CommandInset href
+LatexCommand href
+name " https://reviews.llvm.org/D86832"
+target " https://reviews.llvm.org/D86832"
+literal "false"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Paragraph
+Improvement Idea 5: Using user-supplied cold functions list to outline standard
+ library functions.
+\end_layout
+
+\begin_layout Standard
+In some cases, the user might want to specify which functions are explicitly
+ cold.
+ We contributed a patch that adds two options, cold-functions-list and cold-func
+tions-file that enables the user to supply lists of cold function names
+ to hot/cold splitting.
+ The optimization pass will then mark any function encountered with the
+ same name as cold.
+\end_layout
+
+\begin_layout Standard
+The patch aims to solve the issue of outlining cold paths induced by C++
+ static initializers.
+ For instance, consider the following C++ code
+\end_layout
+
+\begin_layout LyX-Code
+struct foo {
+\end_layout
+
+\begin_layout LyX-Code
+    [[gnu::weak]] foo() noexcept;
+\end_layout
+
+\begin_layout LyX-Code
+    [[gnu::weak]] ~foo(); 
+\end_layout
+
+\begin_layout LyX-Code
+};
+\end_layout
+
+\begin_layout LyX-Code
+void go() {
+\end_layout
+
+\begin_layout LyX-Code
+    static foo f;
+\end_layout
+
+\begin_layout LyX-Code
+}
+\end_layout
+
+\begin_layout LyX-Code
+void go_leaky() {
+\end_layout
+
+\begin_layout LyX-Code
+     static foo& f = *new foo();
+\end_layout
+
+\begin_layout LyX-Code
+}
+\end_layout
+
+\begin_layout Standard
+The static initializer inside function 
+\begin_inset Formula $\texttt{go()}$
+\end_inset
+
+ compiles down to calls to standard library routines 
+\begin_inset Formula $\texttt{\_\_cxa\_guard\_acquire/release}$
+\end_inset
+
+.
+ The idea is that the user can supply these functions as an option to hot/cold
+ splitting in order to benefit from outlining them.
+ However, the patch is still in review since many are unsure if the user-supplie
+d cold functions approach a good idea.
+\end_layout
+
+\begin_layout Itemize
+Deliverables: Patch at 
+\begin_inset CommandInset href
+LatexCommand href
+name "https://reviews.llvm.org/D85628"
+target "https://reviews.llvm.org/D85628"
+literal "false"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section*
+Results
+\end_layout
+
+\begin_layout Paragraph
+firefox, talos-test perf-reftest (-O2 6 runs, performance).
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="5">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (mean)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (median)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Regions Detected
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Regions Split
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 Baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1015.8s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1015.0s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 PGO+Vanilla HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+961.3s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+961.0s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+152048
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+69444
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 PGO+Inliner HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+959.444s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+959.0s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+157166
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+74166
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 D59715
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+964.447s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+953.472s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\emph on
+Summary.
+
+\emph default
+ In the performance benchmark shown above, we see that all three hot/cold
+ splitting variants achieved a ~6% speedup over the -O2 baseline.
+ In addition, the HCS+Inliner implementation detected and split more regions,
+ due to its position in the early stage of the optimization pipeline, before
+ inlining.
+\end_layout
+
+\begin_layout Paragraph
+firefox, code size.
+\end_layout
+
+\begin_layout Standard
+Comparing -Os baseline HCS with our EH-outliner-enabled HCS shows an increase
+ in number of regions detected as well as a reduction in code size:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="3" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Opt Level
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Size (incl.
+ dynamic libraries)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Regions Detected/Regions Split
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=0 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-Os
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.188262032 GB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+142678/62985
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+EH outlining HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-Os
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.187481424GB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+142081/62982
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Comparing code size across different HCS delta values and the D59715 patch
+ suggests D59715 performs best in terms of code size reduction:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="9" columns="3">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Opt Level
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Size (incl.
+ dynamic libraries)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+D59715
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-Os
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.184796592 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=5 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-Os
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.206931464 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=-2 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.270277648 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=0 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.247788640 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+D59715
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.243288440 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=2 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.259242024 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+delta=5 HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.270277648 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O3
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2.299546240 GB
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\emph on
+Summary.
+
+\emph default
+ It is worthy of mentioning that although (as shown below) splitting blocks
+ with the delta value 
+\begin_inset Quotes eld
+\end_inset
+
+boost
+\begin_inset Quotes erd
+\end_inset
+
+ might lead to potential performance gains, it leads to a code size blowup
+ in general.
+ On the other hand, patch D59715 leads to a consistent code size reduction
+ without performance regressions.
+ On the other hand, it is useful to note that due to differences in the
+ transformations required in different optimization levels, the number of
+ regions detected/regions split on changes as well.
+\end_layout
+
+\begin_layout Paragraph
+qemu-x86_64-userspace, clang compilation of postgresql.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="2">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (mean across 3 runs)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 HCS-enabled, delta=0
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+46m4.717s (user) / 12m29.95s (real)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 HCS-enabled, delta=-5
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+45m25s (real) / 12m25s (user)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 PGO baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+45m39.76s (real) / 12m23.28s (user)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 non-PGO baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+53m47.5s (user) / 14m40.3s (real)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Regions split: 4332
+\end_layout
+
+\begin_layout Standard
+Regions extracted: 2911 
+\end_layout
+
+\begin_layout Paragraph
+qemu-x86_64-wholesystem, ubuntu 16.04 startup+Byte-Unixbench benchmarks.
+\end_layout
+
+\begin_layout Standard
+This benchmark measures the time spent starting up ubuntu 16.04 and running
+ several byte-unixbench benchmarks: pipe, spawn, context1, syscall, dhry2,
+ each for 50,000 iterations.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="4" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Time (mean across 6 runs)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+icache miss rate
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+branch miss rate
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 Vanilla HCS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+38.3379s (stddev: 
+\begin_inset Formula $\pm.13\%$
+\end_inset
+
+)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1.952%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1.692%
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 HCS+Cold Sections
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+38.4339s (stddev: 
+\begin_inset Formula $\pm.18\%$
+\end_inset
+
+)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1.936%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3.118%
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+-O2 PGO baseline
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+38.66s (stddev: 
+\begin_inset Formula $\pm.12\%$
+\end_inset
+
+)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1.912%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3.150%
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\emph on
+Summary.
+
+\emph default
+ No significant gains were observed between an implementation with hot/cold
+ splitting applied versus an implementation with hot/cold splitting disabled.
+ As mentioned in previous paragraphs, we think this is partly due to qemu's
+ nature as an instruction translator, as well as its limitations in code
+ size as well as programming language.
+ However, we can see that PGO-enabled compilation in general is helpful.
+\end_layout
+
+\begin_layout Section*
+Epilogue
+\end_layout
+
+\begin_layout Standard
+The end of my GSoC project marks not an end, but a new beginning.
+ I look forward to continuing my work in the following directions with my
+ two mentors.
+\end_layout
+
+\begin_layout Paragraph
+Future work.
+\end_layout
+
+\begin_layout Standard
+Based on my discussion with my mentor, we plan to carry our work in two
+ directions in the future:
+\end_layout
+
+\begin_layout Enumerate
+Experiment on a 
+\begin_inset Quotes eld
+\end_inset
+
+pipeline
+\begin_inset Quotes erd
+\end_inset
+
+ of passes built for outlining: With the newly added machine function splitter
+ pass, hot/cold splitting can be done both in the mid-end and backend.
+ Future work in this direction, as proposed by my mentors, will focus on
+ combining HCS+Inliner+MergeFunctions or HCS+EH Outlining+MergeFunctions
+ for optimizing code size (in the first case, we have shown that scheduling
+ HCS before inliner increases the number of basic blocks split; MergeFunctions
+ can be then applied to merge similar cold functions; in the latter case,
+ experience suggests that many catch blocks have similar structure, and
+ the extracted catch blocks have a potential to be merged by the MergeFunctions
+ pass).
+ And finally, there might be additional gains by applying MachineFunctionSplitte
+r after HotColdSplitting later in the pipeline.
+\end_layout
+
+\begin_layout Enumerate
+The detection of maximal SESE regions in hot/cold splitting pass.
+ The current OutliningRegions implementation in Hot/Cold Splitting does
+ not detect maximal SESE/SEME regions surrounding a cold block, instead
+ it detects a 
+\begin_inset Quotes eld
+\end_inset
+
+safe
+\begin_inset Quotes erd
+\end_inset
+
+ SESE region using the dominator/post-dominator tree.
+ Although by default the RegionInfo pass in LLVM can be quadratic in worst-case
+ time complexity, practical algorithms exist to detect maximal SESE regions.
+ Work has already begun in this direction: I am in the process of implementing
+ a maximal SESE region detection algorithm using the SESE program structure
+ tree, and Rodrigo Rocha has a finished fork which implements maximal SEME
+ detection using a SEME program structure tree.
+ Both implementations work in linear-time and hence do not induce extra
+ compilation overhead.
+ Additional work can be done in this direction to apply these implementations
+ to real-world workloads such as Firefox and see if any practical improvements
+ over the existing implementation might be possible.
+ 
+\end_layout
+
+\begin_layout Paragraph
+Acknowledgements.
+\end_layout
+
+\begin_layout Standard
+First and foremost, I would like to thank my two wonderful mentors, Aditya
+ Kumar and Rodrigo Rocha, for their kind mentoring and helpful discussions
+ which happened over Discord each week.
+ I would also like to thank Vedant Kumar, Snehasish Kumar, and other LLVM
+ contributors who reviewed my patches and provided insights.
+ Finally, I would like to thank Google Summer of Code for their generous
+ support, and the LLVM compiler infrastructure community for providing me
+ opportunity to work on such an interesting and enabling project.
+\end_layout
+
+\end_body
+\end_document
